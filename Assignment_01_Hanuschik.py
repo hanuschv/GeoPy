@@ -51,7 +51,7 @@ def my_sqrt(x):
     '''
     if x < 0:
         print('Not possible to calculate square root of this number.')
-        return 0
+        return None
     else:
         z = m.sqrt(x)
     return z
