@@ -62,8 +62,7 @@ corrupt_scenes.close()                                                  # close 
 
 def ListFiles(filepath , filetype , expression) :
     '''
-    lists all files in a given folder path of a given file extentsion
-
+    # lists all files in a given folder path of a given file extentsion
     :param filepath: string of folder path
     :param filetype: filetype
     :param expression: 1 = gives out the list as file-paths ; 0 = gives out the list as file-names only
@@ -82,9 +81,14 @@ def ListFiles(filepath , filetype , expression) :
 # ############################################################################################################# #\
 # ####################################### Exercise 2-sanity check ############################################# #\
 # ############################################################################################################# #\
+# number of all files in shp_dir with specific extension (.shp & .tif) without file path
+len(ListFiles(shp_dir , '.shp' , 0))
+len(ListFiles(shp_dir , '.tif' , 0))
 
-len(ListFiles(shp_dir , '.shp' , 0))  # number of all files in shp_dir with .shp extension without file path
-len(ListFiles(shp_dir , '.tif' , 0))  # number of all files in shp_dir with .tif extension without file path
+# ################################### CHECK FOR INCOMPLETE SHAPEFILES ########################################## #\
+# WORKFLOW: Get filenames without extensions -> add mandatory extensions -> add directory
+# -> Check if os.path.isfile == TRUE --> if not true --> write missing filename to file
+
 
 ext_shp = ('.shp', '.shx', '.dbf', '.prj')                  # tuple with extensions mandatory for working shapefiles
 shp_list = ListFiles(shp_dir , '.shp' , 0)                  # Lists all files in shp_dir with .shp extension
