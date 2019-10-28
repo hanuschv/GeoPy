@@ -20,6 +20,7 @@ print ("")
 landsat_dir = "/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Assignment02_data/Part01_Landsat/"
 shp_dir = "/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Assignment02_data/Part02_GIS-Files"
 footprints = os.listdir (landsat_dir)
+gis_files = os.listdir(shp_dir)             #list all files in shp_dir
 # if not footprint.startswith('.'):
 #     footprints = os.listdir(landsat_dir)
 
@@ -92,33 +93,70 @@ def ListFiles(filepath , filetype , expression) :
 # ############################################################################################################# #\
 # ####################################### Exercise 2-sanity check ############################################# #\
 # ############################################################################################################# #\
-gis_files = os.listdir(shp_dir)             #list all files in shp_dir
-
-
 len(ListFiles(shp_dir, '.shp' , 0))         #list all files in shp_dir with .shp extension without file path
 len(ListFiles(shp_dir, '.tif' , 0))         #list all files in shp_dir with .tif extension without file path
 
+# def ListFileWithName (filedirectory, filename):
+#     list =[]
+#     for file in filedirectory:
+#         if file.startswith(filename):
+#             list.append(file)
+#     return list
+print(gis_files)
 
-def ListFileWithName (filedirectory, filename):
-    elist = []
-    for file in filedirectory:
-        if file.startswith(filename):
-            elist.append(file)
-        return elist
-
-
+ext_list= ['.shp', '.shx', '.dbf', '.prj']
 
 shp_list = ListFiles(shp_dir , '.shp' , 0)
 shp_names = []
 for shp in shp_list:
     shp_names.append(os.path.splitext(shp)[0])
 
-ListFileWithName(gis_files, '05_PublicLands')
+shp_exists = ([])
+for shp in shp_names :
+    for ext in ext_list:
+        shp_exists.append(shp + ext)
 
+
+
+# for file in gis_files:
+#     if fnmatch.fnmatch(file, '*') == True:
+#         print(file)
+
+
+gis_names = []
+for file in gis_files:
+    gis_names.append(os.path.splitext(file)[0])
+
+
+file_list = []
+file_names = []
 for name in shp_names:
-    if ListFileWithName(gis_files, name) != 'None':
-        print(ListFileWithName(gis_files, name))
+    if name == fnmatch.fnmatch(name, '.shp') in gis_names:
+        file_names.append(name)
+        file_list.append(len((ListFileWithName(gis_files,name))))
 
+print(file_names[6], file_list[6])
+#len(listfiles)
+
+
+shp_mandatory = ('.shp', '.shx', '.dbf', '.prj')
+exclude = ('.tif', '.tfw')
+
+gis_files = [os.path.basename(gis_files) for x in glob.glob('Part02_GIS-Files/*')]  # list all GIS files
+shp_files = [x for x in gis_files if not any(e in x for e in exclude)]  # get only vector layers
+
+basenames = list(set([x.split('.')[0] for x in shp_files]))  # retrieve unique vector layer names
+
+missing_files = open('missing_files.txt', 'w')
+
+# for each vector layer check if any of its files match the mandatory file endings. If not, write the missing file to
+# disc
+for basename in basenames:
+    basename_files = [x for x in shp_files if str(basename)+'.' in x]
+    for mandatory in shp_mandatory:
+        if not any(x.endswith(mandatory) for x in basename_files):
+            missing_files.write(str(basename)+mandatory+'\n')
+missing_files.close()
 
 
 
