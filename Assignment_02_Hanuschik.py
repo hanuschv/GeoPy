@@ -86,9 +86,9 @@ len(ListFiles(shp_dir , '.shp' , 0))
 len(ListFiles(shp_dir , '.tif' , 0))
 
 # ################################### CHECK FOR INCOMPLETE SHAPEFILES ########################################## #\
-# WORKFLOW: Get filenames without extensions -> add mandatory extensions -> add directory
-# -> Check if os.path.isfile == TRUE --> if not true --> write missing filename to file
 
+### WORKFLOW: Get filenames without extensions -> add mandatory extensions -> add directory ###
+### -> Check if os.path.isfile == TRUE --> if not true --> write missing filename to file   ###
 
 ext_shp = ('.shp', '.shx', '.dbf', '.prj')                  # tuple with extensions mandatory for working shapefiles
 shp_list = ListFiles(shp_dir , '.shp' , 0)                  # Lists all files in shp_dir with .shp extension
