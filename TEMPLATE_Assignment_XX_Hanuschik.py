@@ -2,7 +2,7 @@
 #   Assignment_03                                                                                      #
 #   (c) Vincent Hanuschik, 03/11/2019                                                                  #
 #                                                                                                      #
-# ================================== LOAD REQUIRED LIBRARIE ========================================== #
+# ================================== LOAD REQUIRED LIBRARIES ========================================= #
 import time
 import os
 import pandas as pd
