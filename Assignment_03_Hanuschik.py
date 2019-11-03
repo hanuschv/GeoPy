@@ -11,7 +11,7 @@ starttime = time.strftime("%a, %d %b %Y %H:%M:%S" , time.localtime())
 print("--------------------------------------------------------")
 print("Starting process, time: " + starttime)
 print("")
-# ==================================================================================================== #
+# =================================== DATA PATHS AND DIRECTORIES====================================== #
 data_dir =  '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Assignment03_data/'
 landsat_df = pd.read_csv(data_dir+'LANDSAT_8_C1_313804.csv', index_col=0)
 lucas_df = pd.read_csv(data_dir+'DE_2015_20180724.csv', index_col=0)
