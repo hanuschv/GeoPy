@@ -21,6 +21,22 @@ file_list = [path + file for file in sorted(os.listdir(path))]
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exercise I ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 # ==================================================================================================== #
 
+def CornerCoordinates(rasterpath):
+    '''
+    Gets corner coordinates of given raster (filepath). Uses GetGeoTransform to extract coordinate information.
+    Returns list with coordinates in [upperleft x, upperleft y, lowerright x and lowerright y] form.
+    :param rasterpath:
+    :return:
+    '''
+    raster = gdal.Open(rasterpath)
+    gt = raster.GetGeoTransform()  # get geo transform data
+    ul_x = gt[0]  # upper left x coordinate
+    ul_y = gt[3]  # upper left y coordinate
+    lr_x = ul_x + (gt[1] * raster.RasterXSize)  # upper left x coordinate + number of pixels * pixel size
+    lr_y = ul_y + (gt[5] * raster.RasterYSize)  # upper left y coordinate + number of pixels * pixel size
+    coordinates = [ul_x , ul_y , lr_x , lr_y]
+    return coordinates
+
 def overlapExtent(rasterPathlist):
     '''
     Finds the common extent/ overlap and returns geo coordinates from the extent.
@@ -28,34 +44,20 @@ def overlapExtent(rasterPathlist):
     Uses GetGeoTransform to extract corner values of each raster.
     Common extent is then calculated by maximum ul_x value,
     minimum ul_y value, minimum lr_x value and maximum lr_y value.
+    Use list comprehensions to calculate respective coordinates for all rasters and
+    use the index to extract correct position coordinates[upperleft x, upperleft y, lowerright x and lowerright y].
     :param rasterPathlist:
     :return:
     '''
-    # create empty lists for the bounding coordinates and the overlap extent
-    ul_x_list = []
-    ul_y_list = []
-    lr_x_list = []
-    lr_y_list = []
+    ul_x_list = [CornerCoordinates(path)[0] for path in rasterPathlist]
+    ul_y_list = [CornerCoordinates(path)[1] for path in rasterPathlist]
+    lr_x_list = [CornerCoordinates(path)[2] for path in rasterPathlist]
+    lr_y_list = [CornerCoordinates(path)[3] for path in rasterPathlist]
     overlap_extent = []
-    for path in rasterPathlist:
-        raster = gdal.Open(path)
-
-        gt = raster.GetGeoTransform() # get geo transform data
-        ul_x = gt[0] # upper left x coordinate
-        ul_y = gt[3] # upper left y coordinate
-        lr_x = ul_x + (gt[1] * raster.RasterXSize) # upper left x coordinate + number of pixels * pixel size
-        lr_y = ul_y + (gt[5] * raster.RasterYSize) # upper left y coordinate + number of pixels * pixel size
-        #append bbox of every raster to the lists
-        ul_x_list.append(ul_x)
-        ul_y_list.append(ul_y)
-        lr_x_list.append(lr_x)
-        lr_y_list.append(lr_y)
-    #calculate the bounding box coorinates
     overlap_extent.append(max(ul_x_list))
     overlap_extent.append(min(ul_y_list))
     overlap_extent.append(min(lr_x_list))
     overlap_extent.append(max(lr_y_list))
-
     return overlap_extent
 
 geo_overlap = overlapExtent(file_list)
