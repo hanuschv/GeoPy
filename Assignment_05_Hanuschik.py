@@ -7,76 +7,125 @@ import time
 import os
 import numpy as np
 import gdal
-import matplotlib as plt
-
 # ======================================== SET TIME COUNT ============================================ #
 starttime = time.strftime("%a, %d %b %Y %H:%M:%S" , time.localtime())
 print("--------------------------------------------------------")
 print("Starting process, time: " + starttime)
 print("")
-# =================================== DATA PATHS AND DIRECTORIES====================================== #
-# path = '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Assignment05_landsat8_2015/LC81930232015164LGN00/LC81930232015164LGN00_qa_clip.tif'
-# img = '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Assignment05_landsat8_2015/LC81930232015164LGN00/LC81930232015164LGN00_sr_clip.tif'
-# folder = '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Assignment05_landsat8_2015/LC81930232015164LGN00/'
-
+# ================================ DATA PATHS & DIRECTORIES ========================================== #
 dir = '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Assignment05_landsat8_2015/'
-footprints = os.listdir(dir)
+footprints = sorted(os.listdir(dir))
 folder_list = [dir+footprint + '/' for footprint in footprints if not(footprint.startswith('.'))]
+# ======================================== FUNCTIONS ================================================ #
 
-files = [os.path.dirname(folder) + os.listdir(folder) for folder in folder_list if not(folder.startswith('.'))]
-sr_files = [ for sr in files if (sr.endswith('qa_clip.tif'))]
-"Array slicing creates a View on the original array - NOT a copy"
-
-# logicalmask = cloudscore > 42
-# ndvi[logicalmask]               # takes value, where array bool == True
-# ndvi[~logicalmask]              #inverts mask ->takes value, where array bool == False
-
-# plt.imshow()
-# plt.show()
-# qa_clip.tif: one single band/layer raster with the following pixel codes:
-# 0 => clear land pixel, 1 => clear water pixel, 2 => cloud shadow, 3 => snow, 4 => cloud, 255 => fill value.
+# taken from previous assignments
+def ListFiles(filepath , filetype , expression) :
+    '''
+    # lists all files in a given folder path of a given file extentsion
+    :param filepath: string of folder path
+    :param filetype: filetype
+    :param expression: 1 = gives out the list as file-paths ; 0 = gives out the list as file-names only
+    :return: list of files
+    :return: list of files
+    '''
+    file_list = []
+    for file in os.listdir(filepath) :
+        if file.endswith(filetype) :
+            if expression == 0 :
+                file_list.append(file)
+            elif expression == 1 :
+                file_list.append(os.path.join(filepath , file))
+    return file_list
 
 def qa_mask(qa_path):
+    '''
+    Creates Mask based on the criteria applied (good observations = clear land (0), clear water(1),  snow(3)
+    Where conditions is True -> make array value 1, otherwise zero.
+    Returns array with 1's and 0's.
+    :param qa_path:
+    :return:
+    '''
     bqa = gdal.Open(qa_path).ReadAsArray()
     mask = np.where(((bqa == 0) | (bqa == 1) | (bqa == 3)), 1, 0)
     return mask
 
+def findfileinfolder(filepath, ending):
+    '''
+    Takes a filepath and looks for a certain ending in the same folder.
+    Returns the file.
+    :param filepath:
+    :param ending:
+    :return:
+    '''
+    folder = os.path.dirname(filepath)+ '/'
+    files = os.listdir(folder)
+    for f in files:
+        if f.endswith(ending):
+            file = folder + f
+    return file
+
 def maskImg(sr_path):
+    '''
+    Apply mask to img. Automatically finds the corresponding qa_file.
+    Returns array with masked image, where masked values are 0.
+    :param sr_path:
+    :return:
+    '''
     img = gdal.Open(sr_path).ReadAsArray()
-    folder = os.path.dirname(sr_path)+ '/'
-    imgpath = os.listdir(folder)
-    for f in imgpath:
-        if f.endswith('qa_clip.tif'):
-            qa = folder + f
-    mask = qa_mask(qa)
-    masked = np.where((mask == 1), img, np.nan)
+    qa_file = findfileinfolder(sr_path, 'qa_clip.tif')
+    mask = qa_mask(qa_file)
+    masked = img*mask                                   # since mask is 1 or 0 img*mask returns img value or 0
     return masked
     # apply mask from corresponding filepath
 
-def meanimg(sr_path_multiple):
-    for sr in sr_path_multiple:
-        masked = maskImg(sr)
-    return list
+def meanimg(sr_path_list):
+    '''
+    Stacks all files in file- list and applies nanmean along axis 0 (first dimension of array).
+    Nanmean ignores nan's if there are any.
+    Returns the array with mean values.
+    :param sr_path_list:
+    :return:
+    '''
+    stack = np.stack([maskImg(sr) for sr in sr_path_list])
+    meanimg = np.nanmean(stack, axis=0)
+    return meanimg
 
-    # stack 17 images with 6 bands
-    # np.mean(axis= 0) along time (17footprints), account for NaN
+def calcNdVI(nir, red):
+    '''
+    Calculates NDVI without storing values. Simply returns the value
+    :param nir:
+    :param red:
+    :return:
+    '''
+    return (nir - red) / (nir + red)
 
-def NDVI(filepath):
+def NDVI_comp(sr_path_list):
+    '''
+    Creates a composite with original band values where the ndvi is maximum using argmax().
+    Only includes good observations for NDVI calculation, using maskImg.
+    Returns composite.
+    :param sr_path_list:
+    :return:
+    '''
+    scenes = [maskImg(scene) for scene in (sr_path_list)]
+    scenes_stack = np.stack(scenes , axis=0)
+    ndvi_stack = np.stack([calcNdVI(scene[3], [2]) for scene in scenes])   #calculates NDVI for each scene and stacks it
+    ndvi_max = np.nanargmax(ndvi_stack, axis=0)
+    ndvi_comp = np.choose(ndvi_max, scenes_stack)  # take values from scenes_stack (original values) from ndvi_max index
+    ndvi_comp = ndvi_comp.astype(np.int16)         # convert floats to int
+    return ndvi_comp
 
+# ======================================== PROCESSING ================================================== #
+sr_files = [ListFiles(sub, 'sr_clip.tif', 1) for sub in folder_list]
+#ListFiles() creates List for each item. This list comprehension "flattens" it into single list.
+sr_files = [val for sublist in sr_files for val in sublist]
 
+mean_stack = meanimg(sr_files)
+# print(mean_stack.shape)
+ndvi_comp = NDVI_comp(sr_files)
+# print(ndvi_comp.shape)
 
-# ==================================================================================================== #
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exercise X ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-# ==================================================================================================== #
-
-
-# ==================================================================================================== #
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exercise XX ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-# ==================================================================================================== #
-
-
-
-# =============================== END TIME-COUNT AND PRINT TIME STATS ============================== #
+# ============================================ FINISH ================================================== #
 print("")
 endtime = time.strftime("%a, %d %b %Y %H:%M:%S" , time.localtime())
 print("--------------------------------------------------------")
