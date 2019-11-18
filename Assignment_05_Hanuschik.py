@@ -2,6 +2,14 @@
 #   Assignment_05                                                                                      #
 #   (c) Vincent Hanuschik, 12/11/2019                                                                  #
 #                                                                                                      #
+#                Informer:                                                                             #
+#                I definitely underestimated the time it takes to write the last                       #
+#                part of the composite function in order to write the array to                         #
+#                geoTIFF. I read into the topic but then chose not to try to                           #
+#                write it, because of time constraints. I rather wanted to have                        #
+#                a working code until that point so i could work on the geoTiff                        #
+#                part later. Apologies.                                                                #
+#                                                                                                      #
 # ================================== LOAD REQUIRED LIBRARIES ========================================= #
 import time
 import os
