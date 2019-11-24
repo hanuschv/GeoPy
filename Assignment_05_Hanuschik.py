@@ -65,7 +65,7 @@ def findfileinfolder(filepath, ending):
     :param ending:
     :return:
     '''
-    folder = os.path.dirname(filepath)+ '/'
+    folder = os.path.dirname(filepath) + '/'
     files = os.listdir(folder)
     for f in files:
         if f.endswith(ending):
@@ -117,7 +117,7 @@ def NDVI_comp(sr_path_list):
     '''
     scenes = [maskImg(scene) for scene in (sr_path_list)]
     scenes_stack = np.stack(scenes , axis=0)
-    ndvi_stack = np.stack([calcNdVI(scene[3], [2]) for scene in scenes])   #calculates NDVI for each scene and stacks it
+    ndvi_stack = np.stack([calcNdVI(scene[3], scene[2]) for scene in scenes])   #calculates NDVI for each scene and stacks it
     ndvi_max = np.nanargmax(ndvi_stack, axis=0)
     ndvi_comp = np.choose(ndvi_max, scenes_stack)  # take values from scenes_stack (original values) from ndvi_max index
     ndvi_comp = ndvi_comp.astype(np.int16)         # convert floats to int
