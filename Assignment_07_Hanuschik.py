@@ -16,8 +16,8 @@ print("Starting process, time: " + starttime)
 print("")
 # =================================== DATA PATHS AND DIRECTORIES====================================== #
 dir = '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/'
-country_data = dir + 'Assignmet_07_data/SouthAmerica/gadm_SouthAmerica.shp'
-pa_data = dir +  'Assignmet_07_data/WDPA_May2019_shapefile_polygons.shp'
+country_data = dir + 'Assignment07_data/SouthAmerica/gadm_SouthAmerica.shp'
+pa_data = dir +  'Assignment07_data/WDPA_May2019_shapefile_polygons.shp'
 s_america = ogr.Open(country_data)
 pa_glob = ogr.Open(pa_data)
 
