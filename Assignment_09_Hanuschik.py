@@ -179,7 +179,6 @@ for parcel in tqdm(parcel_lyr):
     dem_mean = np.mean(np.where(mask == 1 , dem_sub , 0))
     # ------------------------------------------------
 
-
     # ------------ Public Land-YN ---------
     # parcel lies on public land = 1
     # parcel does not lay on public land = 0
@@ -191,7 +190,7 @@ for parcel in tqdm(parcel_lyr):
     publiclands_lyr.SetSpatialFilter(None)  # reset spatial filter for next parcel
     # ------------------------------------------------
 
-    # ------------Proportion of parcel in THP. ---------
+    # ------------ Proportion of parcel in THP. ---------
     geom = parcel.GetGeometryRef().Clone()
     geom.Transform(transform_timber)
     area_parcel = geom.GetArea()
@@ -210,7 +209,6 @@ for parcel in tqdm(parcel_lyr):
     if percentage_timber > 1:
         percentage_timber = 1
     # ------------------------------------------------------
-
 
     # ------------ write variable values to dataframe ---------
     summary = summary.append({'Parcel APN' : APN ,
