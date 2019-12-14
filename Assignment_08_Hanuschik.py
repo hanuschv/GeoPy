@@ -164,7 +164,6 @@ for i, pa in tqdm(enumerate(lyr_pa)):
 
     for point in points:
         uls = construct_upper_lefts(point, pixelsize=30, windowsize=3)
-
         for j, ul in enumerate(uls):
             poly = bounding_box(ul[0], ul[1], pixelsize=30, poly=poly)
             outFeature = ogr.Feature(featureDefn)
@@ -184,7 +183,7 @@ outDataSource = None
 # create additional KML, runs in terminal but for some reason does not in script on my machine
 cmd = 'ogr2ogr -f "KML" /Users/Vince/Desktop/PA_Landsat_3x3_50samples.kml /Users/Vince/Desktop/PA_Landsat_3x3_50samples.shp'
 os.system(cmd)
-subprocess.call(cmd)
+# subprocess.call(cmd)
 # ======================================================================================================================
 # END
 # ======================================================================================================================
