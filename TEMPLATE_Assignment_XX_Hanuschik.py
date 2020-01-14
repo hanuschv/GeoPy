@@ -7,10 +7,11 @@ import time
 import os
 
 # ======================================== SET TIME COUNT ============================================ #
-starttime = time.strftime("%a, %d %b %Y %H:%M:%S" , time.localtime())
+time_start = time.localtime()
+time_start_str = time.strftime("%a, %d %b %Y %H:%M:%S", time_start)
 print("--------------------------------------------------------")
-print("Starting process, time: " + starttime)
-print("")
+print("Start: " + time_start_str)
+print("--------------------------------------------------------")
 # =================================== DATA PATHS AND DIRECTORIES====================================== #
 
 
@@ -23,9 +24,12 @@ print("")
 # ==================================================================================================== #
 
 # =============================== END TIME-COUNT AND PRINT TIME STATS ============================== #
-print("")
-endtime = time.strftime("%a, %d %b %Y %H:%M:%S" , time.localtime())
+time_end = time.localtime()
+time_end_str = time.strftime("%a, %d %b %Y %H:%M:%S" , time_end)
 print("--------------------------------------------------------")
-print("start: " + starttime)
-print("end: " + endtime)
-print("")
+print("End: " + time_end_str)
+time_diff = (time.mktime(time_end) - time.mktime(time_start)) / 60
+hours , seconds = divmod(time_diff * 60 , 3600)
+minutes , seconds = divmod(seconds , 60)
+print("Duration: " + "{:02.0f}:{:02.0f}:{:02.0f}".format(hours , minutes , seconds))
+print("--------------------------------------------------------")
