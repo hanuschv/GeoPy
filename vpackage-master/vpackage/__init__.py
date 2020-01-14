@@ -1,2 +1,0 @@
-from vpackage import raster
-
