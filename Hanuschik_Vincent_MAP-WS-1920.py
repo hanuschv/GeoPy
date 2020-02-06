@@ -137,32 +137,35 @@ lyr_pt.SetSpatialFilter(extent)
 tc_values = pd.DataFrame(columns={'ID': [],
                                 'tree_fraction': []
                                 })
-
 for point in pointlyr:
+    # only add valid observations (!= -999)
+
     ID = point.GetField('CID')
     tree_fraction = point.GetField('TC')
     tc_values = tc_values.append({'ID': ID,
                                   'tree_fraction': tree_fraction
                                   }, ignore_index=True)
+    # # idea: if TC = -999 don't add CID/TC to df
+    # ID = point.GetField('CID')
+    # TC = point.GetField('TC')
+    # NA_value = -9999
+    # if TC not NA_value :
+    #     df = df.append({'ID' : ID ,
+    #                     'TC' : TC} , ignore_index=True)
 pointlyr.ResetReading()
 
 
 for raster in rasterfiles[0:1]:
-    tile = gdal.Open(raster)
-    extent = create_poly_extent(tile)   # Pixelsize?? 0.000269494585235856472,-0.000269494585235856472
-    lyr_pt = pointshp.GetLayer()
-    lyr_pt.SetSpatialFilter(extent)
-    # tile_values = list() # create list for each tile, where values of point response variable is stored
     # open tile
-    # tile_arr = tile.ReadAsArray()
-
+    tile = gdal.Open(raster)
     # Get Extent from raster tile and create Polygon extent
-    # poly_extent = create_poly_extent(tile)
+    extent = create_poly_extent(tile)
     # Select points within tile using SpatialFilter()
-    # pointlyr_tile = pointlyr.SetSpatialFilter(poly_extent.GetGeometry()) # not working at the moment
-
-    for point in lyr_pt:
-        print(point.GetField('CID'))
+    pointlyr = pointshp.GetLayer()
+    pointlyr.SetSpatialFilter(extent)
+    tile_values = list() # create list for each tile, where values of point response variable is stored
+    # tile_arr = tile.ReadAsArray()
+    for point in pointlyr:
         geom = point.GetGeometryRef()
         feat_id = point.GetField('id_points')
         mx, my = geom.GetX(), geom.GetY()
