@@ -1,6 +1,8 @@
 # ==================================================================================================== #
 #   Assignment_13                                                                                      #
 #   (c) Vincent Hanuschik, 21/01/2020                                                                  #
+#
+#      Due to time constraints I was not able to tackle Excercise III and for that I apologize.
 #                                                                                                      #
 # ================================== LOAD REQUIRED LIBRARIES ========================================= #
 import time
@@ -33,7 +35,6 @@ dir = '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/Week13 - T
 evi_file = 'data/evi_X0070_Y0040_subset.bsq'
 
 def plotts(t, vi, fit = None):
-
     ts = plt.plot(t, vi, 'ko', fillstyle='none')
     if fit is not None:
         t_fit, vi_fit = fit
@@ -76,7 +77,6 @@ A = np.array([np.ones_like(x_f), x_f, x_f * x_f,
               np.cos(2.0 * np.pi * (x_f / period)),
               np.sin(2.0 * np.pi * (x_f / period))])
 
-
 def trend_with_harmonic(t, a0, a1, a2, a3, a4, period=365):
     result = a0 + a1*t + a2*t*t + \
              a3 * np.cos(2 * np.pi * (t / period)) + \
@@ -91,6 +91,7 @@ plt.figure(figsize=(12, 7))
 plt.plot(t_f, y_fit_harmonic_forest, '-', lw=1, label="Fitted")
 plotts(t_f, y_f)
 plt.xlabel("Time"); plt.ylabel("EVI"); plt.legend(loc="best")
+plt.title("Forest Harmonic Model")
 plt.show()
 
 # ==================================================================================================== #
@@ -118,6 +119,7 @@ plt.figure(figsize=(12, 7))
 plt.plot(t_f, y_fit_harmonic_forestII, '-', lw=1, label="Fitted")
 plotts(t_f, y_f)
 plt.xlabel("Time"); plt.ylabel("EVI"); plt.legend(loc="best")
+plt.title("Forest extended Harmonic Model")
 plt.show()
 
 # ==================================================================================================== #
@@ -135,29 +137,36 @@ t_c = ddoys[m]
 # fit harmonic functions
 period = 365
 x_c = t_c
+
 A = np.array([np.ones_like(x_c), x_c, x_c * x_c,
-              np.cos(2.0 * np.pi * (x_c / period)),
-              np.sin(2.0 * np.pi * (x_c / period))])
+              np.cos(2 * np.pi * (x_c / period)),
+              np.sin(2  * np.pi * (x_c / period))])
+
+def trend_with_harmonic_crop(t, a0, a1, a2, a3, a4, period=365):
+    result = a0 + a1*t + a2*t*t + \
+             a3 * np.cos(2 * np.pi * (t / period)) + \
+             a4 * np.sin(2 * np.pi * (t / period))
+    return result
 
 # Call lstsq
 popt_c, sum_of_residuals_c, r_c, evals_c = np.linalg.lstsq(A.T, y_c, rcond=None)
-y_fit_harmonic_cropland = trend_with_harmonic(x_c, *popt_c)
+y_fit_harmonic_cropland = trend_with_harmonic_crop(x_c, *popt_c)
 
 plt.figure(figsize=(12, 7))
 plt.plot(t_c, y_fit_harmonic_cropland, '-', lw=1, label="Fitted")
 plotts(t_c, y_c)
 plt.xlabel("Time"); plt.ylabel("EVI"); plt.legend(loc="best")
+plt.title("Cropland Harmonic Model")
 plt.show()
 
 # ==================================================================================================== #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Crop II ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 # ==================================================================================================== #
-
 A = np.array([np.ones_like(x_c), x_c, x_c * x_c,
               np.cos(2 * np.pi * (x_c / period)),
               np.sin(2 * np.pi * (x_c / period)),
-              np.sin(2 * 2 * np.pi * (x_c / period)),
-              np.sin(2 * 2 * np.pi * (x_c / period))])
+              np.cos(2 * 2 * np.pi * (x_c / period)),
+              np.sin(2 * 2 *np.pi * (x_c / period))])
 
 popt_c, sum_of_residuals_c, r_c, evals_c = np.linalg.lstsq(A.T, y_c, rcond=None)
 
@@ -165,7 +174,7 @@ def trend_with_harmonic_xtnd_crop(t, a0, a1, a2, a3, a4, a5, a6, period=365):
     result = a0 + a1 * t + a2 * t * t + \
              a3 * np.cos(2 * np.pi * (t / period)) + \
              a4 * np.sin(2 * np.pi * (t / period)) + \
-             a5 * np.sin(2 * 2 * np.pi * (t / period)) + \
+             a5 * np.cos(2 * 2 * np.pi * (t / period)) + \
              a6 * np.sin(2 * 2 * np.pi * (t / period))
     return result
 
@@ -175,11 +184,17 @@ plt.figure(figsize=(12, 7))
 plt.plot(t_c, y_fit_harmonic_cropII, '-', lw=1, label="Fitted")
 plotts(t_c, y_c)
 plt.xlabel("Time"); plt.ylabel("EVI"); plt.legend(loc="best")
+plt.title("Cropland extended Harmonic Model")
 plt.show()
 
 # ==================================================================================================== #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exercise III ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 # ==================================================================================================== #
+
+
+
+
+
 
 
 # =============================== END TIME-COUNT AND PRINT TIME STATS ============================== #

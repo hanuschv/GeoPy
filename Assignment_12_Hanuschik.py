@@ -1,7 +1,12 @@
 # ==================================================================================================== #
-#   Assignment_09                                                                                      #
+#   Assignment_12                                                                                      #
 #   (c) Vincent Hanuschik, 10/12/2019                                                                  #
-#                                                                                                      #
+#
+#
+#    Everything works fine, except the problem with the standard scaler per tile.
+#   I couldn't figure out a concept in time to calculate a standard scaler on the
+#   whole landsat image and then applying that on each tile.
+#
 # ================================== LOAD REQUIRED LIBRARIES ========================================= #
 import time
 import os
@@ -93,7 +98,6 @@ def parallel_predict(list):
     ydim = img.shape[1]
     xdim = img.shape[2]
     landsat = img.transpose(1 , 2 , 0).reshape((ydim * xdim , img.shape[0]))
-    scaler = StandardScaler()
     landsat_z = scaler.fit_transform(landsat)
 
     classification = model.predict(landsat_z)
