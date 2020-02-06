@@ -11,6 +11,7 @@ import time
 import os
 import gdal
 import ogr, osr
+import pandas as pd
 # ======================================== SET TIME COUNT ============================================ #
 time_start = time.localtime()
 time_start_str = time.strftime("%a, %d %b %Y %H:%M:%S", time_start)
@@ -89,7 +90,7 @@ def create_poly_extent(img):
     ulx = gt[0]
     uly = gt[3]
     lrx = gt[0] + gt[1] * img.RasterXSize
-    lry = gt[3] + gt[5] * img.RasterXSize
+    lry = gt[3] + gt[5] * img.RasterYSize
     ext = [ulx, uly, lrx, lry]
 
     ring = ogr.Geometry(ogr.wkbLinearRing)
@@ -110,17 +111,18 @@ def create_poly_extent(img):
 pointfiles = ListFiles(pointdir, '.shp', 1)
 pointshp = ogr.Open(pointfiles[0])
 
-rasterfiles = ListFiles(rasterdir, '.tif', 1)
-rastertiles = [gdal.Open(tile) for tile in rasterfiles]
-rasterarr = [gdal.Open(tile).ReadAsArray() for tile in rasterfiles]
+rasterfiles = sorted(ListFiles(rasterdir, '.tif', 1))
+# rastertiles = [gdal.Open(tile) for tile in rasterfiles]
+# rasterarr = [gdal.Open(tile).ReadAsArray() for tile in rasterfiles]
 
 pointlyr = pointshp.GetLayer()
+pointlyr_names = [field.name for field in pointlyr.schema]
 
 # get Projections of Layers to check coordinate systems. In this case both are projected using EPSG 4326/WGS84
 pointcrs = pointlyr.GetSpatialRef()
-rastercrs = rastertiles[0].GetProjection()
+rastercrs = gdal.Open(rasterfiles[0]).GetProjection()
 
-'''
+
 tile0 = gdal.Open(rasterfiles[0])
 extent = create_poly_extent(tile0)
 landsat_crs = osr.SpatialReference(wkt = tile0.GetProjection())
@@ -130,23 +132,36 @@ extent.Transform(transformer)
 # "SetSpatialFilter" on LUCAS dataset using transformed extent
 lyr_pt = pointshp.GetLayer()
 lyr_pt.SetSpatialFilter(extent)
-'''
+
+# extract response variable
+tc_values = pd.DataFrame(columns={'ID': [],
+                                'tree_fraction': []
+                                })
+
+for point in pointlyr:
+    ID = point.GetField('CID')
+    tree_fraction = point.GetField('TC')
+    tc_values = tc_values.append({'ID': ID,
+                                  'tree_fraction': tree_fraction
+                                  }, ignore_index=True)
+pointlyr.ResetReading()
 
 
-
-all_values= list()
-for raster in rasterfiles:
+for raster in rasterfiles[0:1]:
     tile = gdal.Open(raster)
-    tile_values = list() # create list for each tile, where values of point response variable is stored
+    extent = create_poly_extent(tile)   # Pixelsize?? 0.000269494585235856472,-0.000269494585235856472
+    lyr_pt = pointshp.GetLayer()
+    lyr_pt.SetSpatialFilter(extent)
+    # tile_values = list() # create list for each tile, where values of point response variable is stored
     # open tile
-    tile_arr = tile.ReadAsArray()
+    # tile_arr = tile.ReadAsArray()
 
     # Get Extent from raster tile and create Polygon extent
-    poly_extent = create_poly_extent(tile)
+    # poly_extent = create_poly_extent(tile)
     # Select points within tile using SpatialFilter()
-    pointlyr_tile = pointlyr.SetSpatialFilter(poly_extent.GetGeometry()) # not working at the moment
+    # pointlyr_tile = pointlyr.SetSpatialFilter(poly_extent.GetGeometry()) # not working at the moment
 
-    for point in pointlyr_tile:
+    for point in lyr_pt:
         print(point.GetField('CID'))
         geom = point.GetGeometryRef()
         feat_id = point.GetField('id_points')
