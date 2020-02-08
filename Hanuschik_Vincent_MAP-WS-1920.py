@@ -3,7 +3,7 @@
 #   (c) Vincent Hanuschik, 10/12/2019                                                                  #
 #
 #
-#   # tested and running on a Mac running Python
+#   # tested and running on a Mac running Python 3.7
 #
 #                                                                                                      #
 # ================================== LOAD REQUIRED LIBRARIES ========================================= #
@@ -12,6 +12,8 @@ import os
 import gdal
 import ogr, osr
 import pandas as pd
+import numpy as np
+from matplotlib import pylot as plt
 # ======================================== SET TIME COUNT ============================================ #
 time_start = time.localtime()
 time_start_str = time.strftime("%a, %d %b %Y %H:%M:%S", time_start)
@@ -122,16 +124,12 @@ pointlyr_names = [field.name for field in pointlyr.schema]
 pointcrs = pointlyr.GetSpatialRef()
 rastercrs = gdal.Open(rasterfiles[0]).GetProjection()
 
-
+'''
 tile0 = gdal.Open(rasterfiles[0])
 extent = create_poly_extent(tile0)
-landsat_crs = osr.SpatialReference(wkt = tile0.GetProjection())
-gt = tile0.GetGeoTransform()
-transformer = osr.CoordinateTransformation(landsat_crs, pointshp.GetLayer().GetSpatialRef())
-extent.Transform(transformer)
-# "SetSpatialFilter" on LUCAS dataset using transformed extent
 lyr_pt = pointshp.GetLayer()
 lyr_pt.SetSpatialFilter(extent)
+'''
 
 # extract response variable
 tc_values = pd.DataFrame(columns={'ID': [],
@@ -154,31 +152,81 @@ for point in pointlyr:
     #                     'TC' : TC} , ignore_index=True)
 pointlyr.ResetReading()
 
+landsat_metrics = pd.DataFrame(columns={'ID' : [] ,
+                                       'Band 01': [],
+                                       'Band 02': [],
+                                       'Band 03': [],
+                                       'Band 04': [],
+                                       'Band 05': [],
+                                       'Band 06': [],
+                                       'Band 07': [],
+                                       'Band 08': [],
+                                       'Band 09': [],
+                                       'Band 10': [],
+                                       'Band 11': [],
+                                       'Band 12': [],
+                                       'Band 13': [],
+                                       'Band 14': [],
+                                       'Band 15': [],
+                                       'Band 16': [],
+                                       'Band 17': [],
+                                       'Band 18': [],
+                                       'Band 19': [],
+                                       'Band 20': [],
+                                       'Band 21': [],
+                                       })
 
-for raster in rasterfiles[0:1]:
+
+for raster in rasterfiles:
     # open tile
     tile = gdal.Open(raster)
+    gt = tile.GetGeoTransform()
     # Get Extent from raster tile and create Polygon extent
     extent = create_poly_extent(tile)
     # Select points within tile using SpatialFilter()
     pointlyr = pointshp.GetLayer()
     pointlyr.SetSpatialFilter(extent)
-    tile_values = list() # create list for each tile, where values of point response variable is stored
+    # tile_values = [] # create list for each tile, where values of point response variable is stored
     # tile_arr = tile.ReadAsArray()
     for point in pointlyr:
-        geom = point.GetGeometryRef()
-        feat_id = point.GetField('id_points')
+        point_id = point.GetField('CID')
+        geom = point.GetGeometryRef().Clone()
         mx, my = geom.GetX(), geom.GetY()
+        px = int((mx - gt[0]) / gt[1])  # x pixel
+        py = int((my - gt[3]) / gt[5])  # y pixel
 
-        # translate point coordinates to image/array coordinates
-        # px = int((mx - gt[0]) / gt[1])
-        # py = int((my - gt[3]) / gt[5])
+        landsat_values = tile.ReadAsArray(px, py, 1, 1).flatten()
 
-        # intval = px.ReadAsArray(px, py, 1, 1)
-        tile_values.append([feat_id, intval[0]])
+        landsat_metrics = landsat_metrics.append({'ID' : point_id ,
+                                                'Band 01' : landsat_values[0] ,
+                                                'Band 02' : landsat_values[1] ,
+                                                'Band 03' : landsat_values[2] ,
+                                                'Band 04' : landsat_values[3] ,
+                                                'Band 05' : landsat_values[4] ,
+                                                'Band 06' : landsat_values[5] ,
+                                                'Band 07' : landsat_values[6] ,
+                                                'Band 08' : landsat_values[7] ,
+                                                'Band 09' : landsat_values[8] ,
+                                                'Band 10' : landsat_values[9] ,
+                                                'Band 11' : landsat_values[10] ,
+                                                'Band 12' : landsat_values[11] ,
+                                                'Band 13' : landsat_values[12] ,
+                                                'Band 14' : landsat_values[13] ,
+                                                'Band 15' : landsat_values[14] ,
+                                                'Band 16' : landsat_values[15] ,
+                                                'Band 17' : landsat_values[16] ,
+                                                'Band 18' : landsat_values[17] ,
+                                                'Band 19' : landsat_values[18] ,
+                                                'Band 20' : landsat_values[19] ,
+                                                'Band 21' : landsat_values[20] ,}, ignore_index=True)
+    tile = None
 
-    # append list with extracted raster values to global list of values (all tiles)
-    # close tile
+
+
+
+
+
+
 
 
 # pyramid layer level all (2-32) use gdaladdo
