@@ -4,6 +4,13 @@
 #
 #
 #   # tested and running on a Mac running Python 3.7
+# ==================================
+# Open Questions:
+# - Can Tasks be solved in an integrated way? -> response and predictor extraction at the same time
+#     --> even into one df?
+# - Metadata on Landsat Spectral Metrics
+# - Polygon/Pixel Interaction/overlap --> approach?
+# - OT_class meaning?
 #
 #                                                                                                      #
 # ================================== LOAD REQUIRED LIBRARIES ========================================= #
@@ -13,7 +20,7 @@ import gdal
 import ogr, osr
 import pandas as pd
 import numpy as np
-from matplotlib import pylot as plt
+from matplotlib import pyplot as plt
 # ======================================== SET TIME COUNT ============================================ #
 time_start = time.localtime()
 time_start_str = time.strftime("%a, %d %b %Y %H:%M:%S", time_start)
@@ -107,8 +114,6 @@ def create_poly_extent(img):
     poly.AddGeometry(ring)
 
     return poly
-
-
 # =======================================  Part 1 ==================================================== #
 pointfiles = ListFiles(pointdir, '.shp', 1)
 pointshp = ogr.Open(pointfiles[0])
@@ -117,13 +122,14 @@ rasterfiles = sorted(ListFiles(rasterdir, '.tif', 1))
 # rastertiles = [gdal.Open(tile) for tile in rasterfiles]
 # rasterarr = [gdal.Open(tile).ReadAsArray() for tile in rasterfiles]
 
-pointlyr = pointshp.GetLayer()
-pointlyr_names = [field.name for field in pointlyr.schema]
+point_lyr = pointshp.GetLayer()
+pointlyr_names = [field.name for field in point_lyr.schema]
 
 # get Projections of Layers to check coordinate systems. In this case both are projected using EPSG 4326/WGS84
-pointcrs = pointlyr.GetSpatialRef()
+pointcrs = point_lyr.GetSpatialRef()
 rastercrs = gdal.Open(rasterfiles[0]).GetProjection()
 
+# necessary to do tasks individually?
 '''
 tile0 = gdal.Open(rasterfiles[0])
 extent = create_poly_extent(tile0)
@@ -132,25 +138,20 @@ lyr_pt.SetSpatialFilter(extent)
 '''
 
 # extract response variable
-tc_values = pd.DataFrame(columns={'ID': [],
-                                'tree_fraction': []
-                                })
-for point in pointlyr:
-    # only add valid observations (!= -999)
+# tc_values = pd.DataFrame(columns={'ID': [],
+#                                 'tree_fraction': []
+#                                 })
+# for point in point_lyr:
+#     ID = point.GetField('CID')
+#     tree_fraction = point.GetField('TC')
+#     # handle NA values
+#     if not tree_fraction == -9999:
+#     tc_values = tc_values.append({'ID': ID,
+#                                   'tree_fraction': tree_fraction
+#                                   }, ignore_index=True)
+# point_lyr.ResetReading()
 
-    ID = point.GetField('CID')
-    tree_fraction = point.GetField('TC')
-    tc_values = tc_values.append({'ID': ID,
-                                  'tree_fraction': tree_fraction
-                                  }, ignore_index=True)
-    # # idea: if TC = -999 don't add CID/TC to df
-    # ID = point.GetField('CID')
-    # TC = point.GetField('TC')
-    # NA_value = -9999
-    # if TC not NA_value :
-    #     df = df.append({'ID' : ID ,
-    #                     'TC' : TC} , ignore_index=True)
-pointlyr.ResetReading()
+# ------------------------ Part 1:  Excersise 1) & 2)  --------------------------------#
 
 landsat_metrics = pd.DataFrame(columns={'ID' : [] ,
                                        'Band 01': [],
@@ -175,7 +176,9 @@ landsat_metrics = pd.DataFrame(columns={'ID' : [] ,
                                        'Band 20': [],
                                        'Band 21': [],
                                        })
-
+tc_values = pd.DataFrame(columns={'ID' : [] ,
+                                  'tree_fraction' : []
+                                  })
 
 for raster in rasterfiles:
     # open tile
@@ -189,57 +192,77 @@ for raster in rasterfiles:
     # tile_values = [] # create list for each tile, where values of point response variable is stored
     # tile_arr = tile.ReadAsArray()
     for point in pointlyr:
-        point_id = point.GetField('CID')
-        geom = point.GetGeometryRef().Clone()
-        mx, my = geom.GetX(), geom.GetY()
-        px = int((mx - gt[0]) / gt[1])  # x pixel
-        py = int((my - gt[3]) / gt[5])  # y pixel
+        ID = point.GetField('CID')
+        tree_fraction = point.GetField('TC')
+        if not tree_fraction == -9999 :
+            tc_values = tc_values.append({'ID' : ID ,
+                                          'tree_fraction' : tree_fraction
+                                          } , ignore_index=True)
+            geom = point.GetGeometryRef().Clone()
+            mx, my = geom.GetX(), geom.GetY()
+            px = int((mx - gt[0]) / gt[1])  # x pixel
+            py = int((my - gt[3]) / gt[5])  # y pixel
 
-        landsat_values = tile.ReadAsArray(px, py, 1, 1).flatten()
+            landsat_values = tile.ReadAsArray(px, py, 1, 1).flatten()
 
-        landsat_metrics = landsat_metrics.append({'ID' : point_id ,
-                                                'Band 01' : landsat_values[0] ,
-                                                'Band 02' : landsat_values[1] ,
-                                                'Band 03' : landsat_values[2] ,
-                                                'Band 04' : landsat_values[3] ,
-                                                'Band 05' : landsat_values[4] ,
-                                                'Band 06' : landsat_values[5] ,
-                                                'Band 07' : landsat_values[6] ,
-                                                'Band 08' : landsat_values[7] ,
-                                                'Band 09' : landsat_values[8] ,
-                                                'Band 10' : landsat_values[9] ,
-                                                'Band 11' : landsat_values[10] ,
-                                                'Band 12' : landsat_values[11] ,
-                                                'Band 13' : landsat_values[12] ,
-                                                'Band 14' : landsat_values[13] ,
-                                                'Band 15' : landsat_values[14] ,
-                                                'Band 16' : landsat_values[15] ,
-                                                'Band 17' : landsat_values[16] ,
-                                                'Band 18' : landsat_values[17] ,
-                                                'Band 19' : landsat_values[18] ,
-                                                'Band 20' : landsat_values[19] ,
-                                                'Band 21' : landsat_values[20] ,}, ignore_index=True)
+            landsat_metrics = landsat_metrics.append({'ID' : ID ,
+                                                    'Band 01' : landsat_values[0] ,
+                                                    'Band 02' : landsat_values[1] ,
+                                                    'Band 03' : landsat_values[2] ,
+                                                    'Band 04' : landsat_values[3] ,
+                                                    'Band 05' : landsat_values[4] ,
+                                                    'Band 06' : landsat_values[5] ,
+                                                    'Band 07' : landsat_values[6] ,
+                                                    'Band 08' : landsat_values[7] ,
+                                                    'Band 09' : landsat_values[8] ,
+                                                    'Band 10' : landsat_values[9] ,
+                                                    'Band 11' : landsat_values[10] ,
+                                                    'Band 12' : landsat_values[11] ,
+                                                    'Band 13' : landsat_values[12] ,
+                                                    'Band 14' : landsat_values[13] ,
+                                                    'Band 15' : landsat_values[14] ,
+                                                    'Band 16' : landsat_values[15] ,
+                                                    'Band 17' : landsat_values[16] ,
+                                                    'Band 18' : landsat_values[17] ,
+                                                    'Band 19' : landsat_values[18] ,
+                                                    'Band 20' : landsat_values[19] ,
+                                                    'Band 21' : landsat_values[20] ,}, ignore_index=True)
+    pointlyr.SetSpatialFilter(None)
     tile = None
+print(landsat_metrics[0:5])
 
+# ------------------------ Part 1:  Excersise 3)  --------------------------------#
+y = tc_values['tree_fraction']
+X = landsat_metrics.drop(['ID'], axis =1)
 
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
 
+from sklearn.ensemble import RandomForestRegressor
+tree_fraction_model = RandomForestRegressor(n_estimators=500, random_state=0, oob_score=True, n_jobs=3)
+tree_fraction_model.fit(X_train, y_train)
 
+# --------- Part 1:  Excersise 3.1) & 3.2)  ----------------#
+# 1) the root-mean-squared error of the out-of-bag predicted tree cover versus the observed tree cover,
+# 2) the coefficient of determination R^2.
 
-
-
+from sklearn import metrics
+y_pred = tree_fraction_model.predict(X_test)
+from sklearn.metrics import mean_squared_error
+tree_fraction_model
 
 
 # pyramid layer level all (2-32) use gdaladdo
 #
 # Create directory
-dirName = 'tempDir'
-
-try :
-    # Create target Directory
-    os.mkdir(dirName)
-    print("Directory " , dirName , " Created ")
-except FileExistsError :
-    print("Directory " , dirName , " already exists")
+# dirName = 'output'
+#
+# try :
+#     # Create target Directory
+#     os.mkdir(dirName)
+#     print("Directory " , dirName , " Created ")
+# except FileExistsError :
+#     print("Directory " , dirName , " already exists")
 
 
 
