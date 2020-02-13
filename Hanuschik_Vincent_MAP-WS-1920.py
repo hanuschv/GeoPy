@@ -30,6 +30,14 @@ print("Start: " + time_start_str)
 print("--------------------------------------------------------")
 # =================================== DATA PATHS AND DIRECTORIES====================================== #
 dir = '/Users/Vince/Documents/Uni MSc/Msc 7 Geoprocessing with Python/MAP/Week15 - MAP/Datasets/'
+os.chdir(dir)
+# Create output directory
+try :
+    outdir = dir+'HANUSCHIK_VINCENT_MAP-WS- 1920_RF-predictions/'
+    os.mkdir(outdir)
+    print("Directory " , outdir , " Created ")
+except FileExistsError :
+    print("Directory " , outdir , " already exists")
 # ==================================================================================================== #
 pointdir = dir + 'RandomPoint_Dataset/'
 rasterdir = dir + 'RasterFiles/'
@@ -70,29 +78,6 @@ def CornerCoordinates(rasterpath):
     lr_y = ul_y + (gt[5] * raster.RasterYSize)  # upper left y coordinate + number of pixels * pixel size
     coordinates = [ul_x , ul_y , lr_x , lr_y]
     return coordinates
-
-# def overlapExtent(rasterPathlist):
-#     '''
-#     Finds the common extent/ overlap and returns geo coordinates from the extent.
-#     Returns list with corner coordinates.
-#     Uses GetGeoTransform to extract corner values of each raster.
-#     Common extent is then calculated by maximum ul_x value,
-#     minimum ul_y value, minimum lr_x value and maximum lr_y value.
-#     Use list comprehensions to calculate respective coordinates for all rasters and
-#     use the index to extract correct position coordinates[upperleft x, upperleft y, lowerright x and lowerright y].
-#     :param rasterPathlist:
-#     :return:
-#     '''
-#     ul_x_list = [CornerCoordinates(path)[0] for path in rasterPathlist]
-#     ul_y_list = [CornerCoordinates(path)[1] for path in rasterPathlist]
-#     lr_x_list = [CornerCoordinates(path)[2] for path in rasterPathlist]
-#     lr_y_list = [CornerCoordinates(path)[3] for path in rasterPathlist]
-#     overlap_extent = []
-#     overlap_extent.append(max(ul_x_list))
-#     overlap_extent.append(min(ul_y_list))
-#     overlap_extent.append(min(lr_x_list))
-#     overlap_extent.append(max(lr_y_list))
-#     return overlap_extent
 
 def create_poly_extent(img):
     gt = img.GetGeoTransform()
@@ -156,27 +141,7 @@ pointlyr_names = [field.name for field in point_lyr.schema]
 pointcrs = point_lyr.GetSpatialRef()
 rastercrs = gdal.Open(rasterfiles[0]).GetProjection()
 # polygoncrs = poly_lyr.GetSpatialRef()
-# necessary to do tasks individually?
-'''
-tile0 = gdal.Open(rasterfiles[0])
-extent = create_poly_extent(tile0)
-lyr_pt = pointshp.GetLayer()
-lyr_pt.SetSpatialFilter(extent)
-'''
 
-# extract response variable
-# tc_values = pd.DataFrame(columns={'ID': [],
-#                                 'tree_fraction': []
-#                                 })
-# for point in point_lyr:
-#     ID = point.GetField('CID')
-#     tree_fraction = point.GetField('TC')
-#     # handle NA values
-#     if not tree_fraction == -9999:
-#     tc_values = tc_values.append({'ID': ID,
-#                                   'tree_fraction': tree_fraction
-#                                   }, ignore_index=True)
-# point_lyr.ResetReading()
 
 # ------------------------ Part 1:  Excersise 1) & 2)  --------------------------------#
 
@@ -230,7 +195,7 @@ for raster in rasterfiles:
                                                          'Band_09' : landsat_values[8],
                                                          'Band_10' : landsat_values[9],
                                                          'Band_11' : landsat_values[10],
-                                                         'Band_12' : landsat_values[11],}, ignore_index=True)
+                                                         'Band_12' : landsat_values[11]}, ignore_index=True)
     pointlyr.SetSpatialFilter(None)
     tile = None
 print(tc_landsat_metrics[0:5])
@@ -240,8 +205,9 @@ y = tc_landsat_metrics['tree_fraction']
 X = tc_landsat_metrics.drop(['ID', 'tree_fraction'], axis =1)
 
 from sklearn.ensemble import RandomForestRegressor
-tree_fraction_model = RandomForestRegressor(n_estimators=500, random_state=0, oob_score=True, n_jobs=3)
+tree_fraction_model = RandomForestRegressor(n_estimators=500, random_state=0, oob_score=True)
 tree_fraction_model.fit(X, y)
+# GridSearch_CV -> n_trees & n_splits
 
 # --------- Part 1:  Excersise 3.1) & 3.2)  ----------------#
 # 1) the root-mean-squared error of the out-of-bag predicted tree cover versus the observed tree cover,
@@ -255,9 +221,11 @@ mse = metrics.mean_squared_error(oob_pred, y)
 rmse = math.sqrt(mse)/10000
 r2 = tree_fraction_model.score(X,y)
 
+tile1 = gdal.Open(rasterfiles[0]).ReadAsArray()
 
 # --------- Part 1:  Excersise 4)  ----------------#
 # Parallel: Write helper function to flatten tile and apply prediction function
+
 def parallel_predict(list):
     model = list[1]
     # scaler = list[2]
@@ -266,54 +234,75 @@ def parallel_predict(list):
 
     ydim = img.shape[1]
     xdim = img.shape[2]
-    landsat = img.transpose(1 , 2 , 0).reshape((ydim * xdim , img.shape[0]))
-    landsat_z = scaler.fit_transform(landsat)
+    tile = img.transpose(1 , 2 , 0).reshape((ydim * xdim , img.shape[0]))
 
-    classification = model.predict(landsat_z)
-    rs = classification.reshape((ydim , xdim))
-    outPath = list[0]
+    predict = model.predict(tile[:,0:12])
+    rs = predict.reshape((ydim , xdim))
+    outPath = outdir + os.path.basename(list[0])
     outPath = outPath.replace(".tif" , "_RF-regression.tif")
     array2geotiff(rs,outPath, ingdal=raster)
+    gdal_pyramids = gdal.Open(outPath)
+    gdal_pyramids.BuildOverviews('average', [2, 4, 8, 16, 32])
+    gdal_pyramids = None
     return rs
-# Take our full image and reshape into long 2d array (nrow * ncol, nband) for classification
-for raster in rasterfiles:
-    # open tile
-    tile = gdal.Open(raster).ReadAsArray()
-    n_bands, n_rows, n_cols = tile.shape
-    new_shape = (n_rows * n_cols, n_bands)
-    flatTile = tile.reshape((n_bands, n_rows * n_cols))
-    flatTile.shape
-    flatTile = np.transpose(flatTile)
-    print('Reshaped from {o} to {n}'.format(o=tile.shape ,
-                                            n=flatTile.shape))
 
-    # Now predict for each pixel
-    class_prediction = tree_fraction_model.predict(flatTile)
-    # Reshape our classification map
-    tree_fraction_tile = class_prediction.reshape(tile[0, :, :].shape)
-    tile = None
+pred_arg_list = [(raster, tree_fraction_model) for raster in rasterfiles]
+
+from joblib import Parallel, delayed
+output = Parallel(n_jobs=3)(delayed(parallel_predict)(list) for list in pred_arg_list)
+
+# pred_rast_list =
+# gdal.buildvrt doq_index.vrt doq/*.tif
+
+
+# Take our full image and reshape into long 2d array (nrow * ncol, nband) for classification
+# for raster in rasterfiles[0:1]:
+#     # open tile
+#     tile = gdal.Open(raster).ReadAsArray()
+#     n_bands, n_rows, n_cols = tile.shape
+#     new_shape = (n_rows * n_cols, n_bands)
+#     flatTile = tile.reshape((n_bands, n_rows * n_cols))
+#     flatTile.shape
+#     flatTile = np.transpose(flatTile)
+#     print('Reshaped from {o} to {n}'.format(o=tile.shape ,
+#                                             n=flatTile.shape))
+#
+#     # Now predict for each pixel
+#     class_prediction = tree_fraction_model.predict(flatTile[:,0:12])
+#     # Reshape our classification map
+#     tree_fraction_tile = class_prediction.reshape(tile[0, :, :].shape)
+#     tile_name = os.path.basename(raster)
+#     array2geotiff(tree_fraction_tile , tile_name+'_RF-regression.tif' , ingdal=gdal.Open(raster))
+#     tile = None
 
 
 # array2geotiff(tree_fraction_tile, 'tree_fraction_tile01.tif', ingdal= gdal.Open(rasterfiles[0]))
 plt.imshow(tree_fraction_tile)
 plt.show()
 
-# gdal.BuildVRT
+mosaic_files = ListFiles(outdir, '.tif',1)
+mosaic_tiles = [gdal.Open(tile) for tile in mosaic_files]
+
+# vrt_options = gdal.BuildVRTOptions(resampleAlg='cubic', addAlpha=True)
+vrt = gdal.BuildVRT(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt', mosaic_files)
+vrt = None   # necessary in order to write to disk
+
+vrt_to_tiff = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt')
+vrt_arr = vrt_to_tiff.ReadAsArray()
+# vrt_arr[vrt_arr == 0 ] = np.nan
+array2geotiff(vrt_arr, outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif', ingdal=vrt_to_tiff)
+ov_test = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif')
+ov_test_arr = ov_test.ReadAsArray()
+ov = ov_test.BuildOverviews('average', [2, 4, 8, 16, 32])
+ov = None
+vrt_ov = vrt_to_tiff
+vrt_ov = vrt_ov.BuildOverviews('average', [2, 4, 8, 16, 32])
+vrt_ov = None
+
+
 # gdalmerge, createcopy
 # pyramid layer level all (2-32) use gdaladdo
 # copy raster to new raster
-# Create directory
-# dirName = 'output'
-#
-# try :
-#     # Create target Directory
-#     os.mkdir(dirName)
-#     print("Directory " , dirName , " Created ")
-# except FileExistsError :
-#     print("Directory " , dirName , " already exists")
-
-
-
 
 # ==================================================================================================== #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exercise XX ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
