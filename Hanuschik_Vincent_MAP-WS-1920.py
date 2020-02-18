@@ -21,6 +21,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import multiprocessing
+from tqdm import tqdm
 from matplotlib import pyplot as plt
 # ======================================== SET TIME COUNT ============================================ #
 time_start = time.localtime()
@@ -290,23 +291,132 @@ vrt = None   # necessary in order to write to disk
 vrt_to_tiff = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt')
 vrt_arr = vrt_to_tiff.ReadAsArray()
 # vrt_arr[vrt_arr == 0 ] = np.nan
-array2geotiff(vrt_arr, outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif', ingdal=vrt_to_tiff)
-ov_test = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif')
-ov_test_arr = ov_test.ReadAsArray()
-ov = ov_test.BuildOverviews('average', [2, 4, 8, 16, 32])
-ov = None
-vrt_ov = vrt_to_tiff
-vrt_ov = vrt_ov.BuildOverviews('average', [2, 4, 8, 16, 32])
-vrt_ov = None
 
+array2geotiff(vrt_arr, outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif', ingdal=vrt_to_tiff)
+tiff_overview = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif', 0)
+tiff_overview = tiff_overview.BuildOverviews('average', [2, 4, 8, 16, 32])
+tiff_overview = None
+# gdal.Open(. , 0) opens it read-only -> .ovr's created externally, ',1' stores them internally (read-write)
+
+vrt_to_tiff = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt')
+vrt_to_tiff = vrt_to_tiff.BuildOverviews('average', [2, 4, 8, 16, 32])
+vrt_ov = None
 
 # gdalmerge, createcopy
 # pyramid layer level all (2-32) use gdaladdo
 # copy raster to new raster
 
 # ==================================================================================================== #
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Exercise XX ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Part II ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 # ==================================================================================================== #
+polyfiles = ListFiles(polydir, '.shp', 1)
+polyshp = ogr.Open(polydir+'FL_Areas_ChacoRegion.shp')
+polylyr = polyshp.GetLayer()
+tree_fraction_mosaic = gdal.Open(outdir +'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif')
+
+gt = tree_fraction_mosaic.GetGeoTransform()
+pixel_size = gt[1]
+
+crs_tree_fraction = osr.SpatialReference(wkt=tree_fraction_mosaic.GetProjection())
+crs_poly = polylyr.GetSpatialRef()
+transform_poly = osr.CoordinateTransformation(crs_poly,crs_tree_fraction)
+outDriver = ogr.GetDriverByName("Memory")
+
+mosaic_extent = create_poly_extent(tree_fraction_mosaic)
+
+def image_offsets(img, coordinates):
+    gt = img.GetGeoTransform()
+    inv_gt = gdal.InvGeoTransform(gt)
+    offsets_ul = list(map(int, gdal.ApplyGeoTransform(inv_gt, coordinates[0], coordinates[1])))
+    offsets_lr = list(map(int, gdal.ApplyGeoTransform(inv_gt, coordinates[2], coordinates[3])))
+    return offsets_ul + offsets_lr
+
+# plylyr_names = [field.name for field in polylyr.schema]
+
+summary = pd.DataFrame(columns={'ID': [],
+                                'OT_class': [],
+                                'area_km2': [],
+                                'mean': [],
+                                'standard_deviation': [],
+                                'min': [],
+                                'max': [],
+                                '10th_percentile': [],
+                                '90th percentile': []})
+
+
+polylyr.ResetReading()
+within = []
+out =[]
+for poly in polylyr:
+    # ------------ mean elevation of parcel ---------
+    # Geometry of each parcel
+    ID = poly.GetField('UniqueID')
+    OT_class = poly.GetField('OT_class')
+    geom = poly.GetGeometryRef().Clone()
+    degarea = geom.GetArea()
+    geom.Transform(transform_poly)
+    if geom.Within(mosaic_extent):
+        #something
+    else:
+        #something
+
+    Envelope = geom.GetEnvelope()
+    x_min , x_max , y_min , y_max = geom.GetEnvelope()
+
+    # create temporary shape file with only the current feature
+    outDataSource = outDriver.CreateDataSource('temp.shp')
+    outLayer = outDataSource.CreateLayer('' , crs_tree_fraction , geom_type=ogr.wkbPolygon)
+    featureDefn = outLayer.GetLayerDefn()
+    # create feature
+    poly = ogr.Feature(featureDefn)
+    poly.SetGeometry(geom)
+    outLayer.CreateFeature(poly)
+
+    # Get resolution of vectorized raster
+    x_res = int((x_max - x_min) / pixel_size)
+    # if the parcel is smaller than 1 pixel, 1 pixel will be created
+    if x_res == 0 :
+        x_res = 1
+    y_res = int((y_max - y_min) / pixel_size)
+    if y_res == 0 :
+        y_res = 1
+    # create temporary gdal raster
+    target_ds = gdal.GetDriverByName('MEM').Create('' , x_res , y_res , gdal.GDT_Byte)
+    target_ds.SetGeoTransform((x_min , pixel_size , 0 , y_max , 0 , -pixel_size))
+    band = target_ds.GetRasterBand(1)
+    band.SetNoDataValue(255)
+    # Rasterize parcel
+    gdal.RasterizeLayer(target_ds , [1] , outLayer , burn_values=[1])
+    poly = None
+    outDataSource = None
+    outLayer = None
+    # read mask
+    mask = band.ReadAsArray()
+    # get array indices for subsetting the dem
+    img_offsets = image_offsets(tree_fraction_mosaic , (x_min , y_max , x_max , y_min))
+    # subset dem
+    tf_m_sub = tree_fraction_mosaic.ReadAsArray(img_offsets[0] , img_offsets[1] , mask.shape[1] , mask.shape[0])
+
+    # apply mask and calc mean
+    dem_mean = np.mean(np.where(mask == 1 , tf_m_sub , 0))
+
+    summary = pd.DataFrame(columns={'ID' : ID ,
+                                    'OT_class' : OT_class ,
+                                    'area_km2' : degarea,
+                                    'mean' : [] ,
+                                    'standard_deviation' : [] ,
+                                    'min' : [] ,
+                                    'max' : [] ,
+                                    '10th_percentile' : [] ,
+                                    '90th percentile' : []})
+    # ------------------------------------------------
+
+polylyr.ResetReading()
+
+
+
+
+
 
 # =============================== END TIME-COUNT AND PRINT TIME STATS ============================== #
 time_end = time.localtime()
