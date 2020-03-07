@@ -1,15 +1,9 @@
 # ==================================================================================================== #
-#   MAP                                                                                      #
+#   MAP  - Geoprocessing with Python                                                                   #
 #   (c) Vincent Hanuschik, 10/12/2019                                                                  #
-#
-#
-#   # tested and running on a Mac running Python 3.7
-# ==================================
-# - Metadata on Landsat Spectral Metrics
-#      --> Band 1-12!
-# - Polygon/Pixel Interaction/overlap --> approach?
-# - OT_class meaning?
-#
+#                                                                                                      #
+#   # tested and running on a Mac (Mac OS Mojave 10.14.6), Python 3.7 and Gdal 2.3.3                   #
+#                                                                                                      #
 #                                                                                                      #
 # ================================== LOAD REQUIRED LIBRARIES ========================================= #
 import time
@@ -22,7 +16,10 @@ import numpy as np
 import joblib
 import multiprocessing
 from tqdm import tqdm
-from matplotlib import pyplot as plt
+
+# print gdal version (2030300 in my case, meaning 2.3.3)
+print("Gdal Version is:", gdal.VersionInfo())
+
 # ======================================== SET TIME COUNT ============================================ #
 time_start = time.localtime()
 time_start_str = time.strftime("%a, %d %b %Y %H:%M:%S", time_start)
@@ -36,7 +33,7 @@ os.chdir(dir)
 try :
     outdir = dir+'HANUSCHIK_VINCENT_MAP-WS- 1920_RF-predictions/'
     os.mkdir(outdir)
-    print("Directory " , outdir , " Created ")
+    print("Directory " , outdir , " successfully Created ")
 except FileExistsError :
     print("Directory " , outdir , " already exists")
 # ==================================================================================================== #
@@ -64,23 +61,12 @@ def ListFiles(filepath , filetype , expression) :
                 file_list.append(os.path.join(filepath , file))
     return file_list
 
-def CornerCoordinates(rasterpath):
+def create_poly_extent(img):
     '''
-    Gets corner coordinates of given raster (filepath). Uses GetGeoTransform to extract coordinate information.
-    Returns list with coordinates in [upperleft x, upperleft y, lowerright x and lowerright y] form.
-    :param rasterpath:
+    Returns a polygon from a gdal Raster
+    :param img:
     :return:
     '''
-    raster = gdal.Open(rasterpath)
-    gt = raster.GetGeoTransform()  # get geo transform data
-    ul_x = gt[0]  # upper left x coordinate
-    ul_y = gt[3]  # upper left y coordinate
-    lr_x = ul_x + (gt[1] * raster.RasterXSize)  # upper left x coordinate + number of pixels * pixel size
-    lr_y = ul_y + (gt[5] * raster.RasterYSize)  # upper left y coordinate + number of pixels * pixel size
-    coordinates = [ul_x , ul_y , lr_x , lr_y]
-    return coordinates
-
-def create_poly_extent(img):
     gt = img.GetGeoTransform()
 
     ulx = gt[0]
@@ -102,7 +88,19 @@ def create_poly_extent(img):
 
     return poly
 
-def array2geotiff(inputarray, outputfilename, gt = None, pj = None, ingdal = None, dtype = gdal.GDT_Float32):
+def array2geotiff(inputarray, outputfilename, pyramids=False, gt = None, pj = None, ingdal = None, dtype = gdal.GDT_Float32):
+    '''
+    Writes a given array as a .tif file to disk. Optionally creates pyramids/overviews. Can use a gdal raster as input
+    for coordinate system and projection information.
+    :param inputarray:
+    :param outputfilename:
+    :param pyramids:
+    :param gt:
+    :param pj:
+    :param ingdal:
+    :param dtype:
+    :return:
+    '''
     if len(inputarray.shape) > 2:
         nrow = inputarray.shape[1]
         ncol = inputarray.shape[2]
@@ -127,25 +125,65 @@ def array2geotiff(inputarray, outputfilename, gt = None, pj = None, ingdal = Non
     else:
         ds.GetRasterBand(1).WriteArray(inputarray)
     ds.FlushCache()
-# =======================================  Part 1 ==================================================== #
+    if pyramids == True:
+        gdal_pyramids = gdal.Open(outputfilename)
+        gdal_pyramids.BuildOverviews('average', [2, 4, 8, 16, 32])
+        gdal_pyramids = None
+
+def parallel_predict(list):
+    '''
+    helper function to flatten tile and apply prediction function and build pyramids for prediction
+    :param list: list[0] raster path string ; list[1] random forest model used in prediction
+    :return:
+    '''
+    model = list[1]
+    # scaler = list[2]
+    raster = gdal.Open(list[0])
+    img = raster.ReadAsArray()
+
+    ydim = img.shape[1]
+    xdim = img.shape[2]
+    tile = img.transpose(1 , 2 , 0).reshape((ydim * xdim , img.shape[0]))
+
+    predict = model.predict(tile[:,0:12])
+    rs = predict.reshape((ydim , xdim))
+    outPath = outdir + os.path.basename(list[0])
+    outPath = outPath.replace(".tif" , "_RF-regression.tif")
+    array2geotiff(rs,outPath,pyramids = True, ingdal=raster)
+    print(os.path.basename(outPath), "successfully created.")
+    return rs
+
+def image_offsets(img, coordinates):
+    '''
+    Function that calculates the image offsets from the upper left and lower right corners.
+    :param img:
+    :param coordinates:
+    :return:
+    '''
+    gt = img.GetGeoTransform()
+    inv_gt = gdal.InvGeoTransform(gt)
+    offsets_ul = list(map(int, gdal.ApplyGeoTransform(inv_gt, coordinates[0], coordinates[1])))
+    offsets_lr = list(map(int, gdal.ApplyGeoTransform(inv_gt, coordinates[2], coordinates[3])))
+    return offsets_ul + offsets_lr
+
+# ==================================================================================================== #
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Part I ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+# ==================================================================================================== #
+# load point shapefile and get list with strings of all tiles in rasterfolder
 pointfiles = ListFiles(pointdir, '.shp', 1)
 pointshp = ogr.Open(pointfiles[0])
-
-rasterfiles = sorted(ListFiles(rasterdir, '.tif', 1))
-# rastertiles = [gdal.Open(tile) for tile in rasterfiles]
-# rasterarr = [gdal.Open(tile).ReadAsArray() for tile in rasterfiles]
-
 point_lyr = pointshp.GetLayer()
 pointlyr_names = [field.name for field in point_lyr.schema]
 
-# get Projections of Layers to check coordinate systems. In this case both are projected using EPSG 4326/WGS84
+rasterfiles = sorted(ListFiles(rasterdir, '.tif', 1))
+
+# get Projections of Layers to check coordinate systems.
+# In this case both rasters and the pointshapefile are projected using EPSG 4326/WGS84.
 pointcrs = point_lyr.GetSpatialRef()
 rastercrs = gdal.Open(rasterfiles[0]).GetProjection()
-# polygoncrs = poly_lyr.GetSpatialRef()
 
-
-# ------------------------ Part 1:  Excersise 1) & 2)  --------------------------------#
-
+# ------------------------ Part 1.1) & 1.2)  --------------------------------#
+# create dataFrame with necessary columns (excluding bands 13-21)
 tc_landsat_metrics = pd.DataFrame(columns={'ID' : [] ,
                                         'tree_fraction' : [],
                                         'Band_01': [],
@@ -161,7 +199,13 @@ tc_landsat_metrics = pd.DataFrame(columns={'ID' : [] ,
                                         'Band_11': [],
                                         'Band_12': [],
                                        })
-for raster in rasterfiles:
+
+# for each tile create a polygon in order to filter only points within the tile extent;
+# next loop through all filtered points and if they are not NA's (-9999) tansform into
+# array coordinates and extract the corresponding values and append to the dataframe.
+# reset the filter and start over with the next tile.
+print("Looping over tiles, extracting Landsat Metrics and tree fractions.")
+for raster in tqdm(rasterfiles):
     # open tile
     tile = gdal.Open(raster)
     gt = tile.GetGeoTransform()
@@ -170,8 +214,7 @@ for raster in rasterfiles:
     # Select points within tile using SpatialFilter()
     pointlyr = pointshp.GetLayer()
     pointlyr.SetSpatialFilter(extent)
-    # tile_values = [] # create list for each tile, where values of point response variable is stored
-    # tile_arr = tile.ReadAsArray()
+
     for point in pointlyr:
         ID = point.GetField('CID')
         tree_fraction = point.GetField('TC')
@@ -199,140 +242,84 @@ for raster in rasterfiles:
                                                          'Band_12' : landsat_values[11]}, ignore_index=True)
     pointlyr.SetSpatialFilter(None)
     tile = None
+print("Variable extraction done.")
 print(tc_landsat_metrics[0:5])
 
-# ------------------------ Part 1:  Excersise 3)  --------------------------------#
+# ------------------------ Part 1.3)  --------------------------------#
+# split the dataframe into explanatory variable (landsat metrics) and response variable (tree fraction)
 y = tc_landsat_metrics['tree_fraction']
 X = tc_landsat_metrics.drop(['ID', 'tree_fraction'], axis =1)
 
 from sklearn.ensemble import RandomForestRegressor
-tree_fraction_model = RandomForestRegressor(n_estimators=500, random_state=0, oob_score=True)
+tree_fraction_model = RandomForestRegressor(n_estimators=200, random_state=0, oob_score=True)
 tree_fraction_model.fit(X, y)
-# GridSearch_CV -> n_trees & n_splits
 
-# --------- Part 1:  Excersise 3.1) & 3.2)  ----------------#
+# --------- Part 1.3.1) & 1.3.2)  ----------------#
 # 1) the root-mean-squared error of the out-of-bag predicted tree cover versus the observed tree cover,
 # 2) the coefficient of determination R^2.
-
 from sklearn import metrics
 oob_score = tree_fraction_model.oob_score_
 oob_pred = tree_fraction_model.oob_prediction_
 
-mse = metrics.mean_squared_error(oob_pred, y)
-rmse = math.sqrt(mse)/10000
-r2 = tree_fraction_model.score(X,y)
+r2 = metrics.r2_score(y,oob_pred)
+rmse = math.sqrt(metrics.mean_squared_error(y, oob_pred))/10000
 
-tile1 = gdal.Open(rasterfiles[0]).ReadAsArray()
+print("Random Forest Tree Fraction Model created.\n The the root-mean-squared error (RMSE) of the out-of-bag predicted tree cover versus the observed tree cover amounts to:",
+      round(rmse,4),".\n The coefficient of determination R^2 results in a score of:", round(r2,4),".")
 
-# --------- Part 1:  Excersise 4)  ----------------#
-# Parallel: Write helper function to flatten tile and apply prediction function
-
-def parallel_predict(list):
-    model = list[1]
-    # scaler = list[2]
-    raster = gdal.Open(list[0])
-    img = raster.ReadAsArray()
-
-    ydim = img.shape[1]
-    xdim = img.shape[2]
-    tile = img.transpose(1 , 2 , 0).reshape((ydim * xdim , img.shape[0]))
-
-    predict = model.predict(tile[:,0:12])
-    rs = predict.reshape((ydim , xdim))
-    outPath = outdir + os.path.basename(list[0])
-    outPath = outPath.replace(".tif" , "_RF-regression.tif")
-    array2geotiff(rs,outPath, ingdal=raster)
-    gdal_pyramids = gdal.Open(outPath)
-    gdal_pyramids.BuildOverviews('average', [2, 4, 8, 16, 32])
-    gdal_pyramids = None
-    return rs
-
+# --------- Part 1.4)  ----------------#
+# predicting each tile in parallel using the helper function defined above
+# also includes the calculation of pyramids ( Part 1.7)
 pred_arg_list = [(raster, tree_fraction_model) for raster in rasterfiles]
 
 from joblib import Parallel, delayed
+print("Starting prediction with Tree Fraction Model on tiles.")
 output = Parallel(n_jobs=3)(delayed(parallel_predict)(list) for list in pred_arg_list)
 
-# pred_rast_list =
-# gdal.buildvrt doq_index.vrt doq/*.tif
+# --------- Part 1.5.1) & Part 1.5.2) ----------------#
+# create mosaic for study area and save as .vrt and .tif
 
-
-# Take our full image and reshape into long 2d array (nrow * ncol, nband) for classification
-# for raster in rasterfiles[0:1]:
-#     # open tile
-#     tile = gdal.Open(raster).ReadAsArray()
-#     n_bands, n_rows, n_cols = tile.shape
-#     new_shape = (n_rows * n_cols, n_bands)
-#     flatTile = tile.reshape((n_bands, n_rows * n_cols))
-#     flatTile.shape
-#     flatTile = np.transpose(flatTile)
-#     print('Reshaped from {o} to {n}'.format(o=tile.shape ,
-#                                             n=flatTile.shape))
-#
-#     # Now predict for each pixel
-#     class_prediction = tree_fraction_model.predict(flatTile[:,0:12])
-#     # Reshape our classification map
-#     tree_fraction_tile = class_prediction.reshape(tile[0, :, :].shape)
-#     tile_name = os.path.basename(raster)
-#     array2geotiff(tree_fraction_tile , tile_name+'_RF-regression.tif' , ingdal=gdal.Open(raster))
-#     tile = None
-
-
-# array2geotiff(tree_fraction_tile, 'tree_fraction_tile01.tif', ingdal= gdal.Open(rasterfiles[0]))
-plt.imshow(tree_fraction_tile)
-plt.show()
-
+# --- 1.5.1) & 1.7)
+# build the Virtual Raster File and build Pyramids
 mosaic_files = ListFiles(outdir, '.tif',1)
-mosaic_tiles = [gdal.Open(tile) for tile in mosaic_files]
-
-# vrt_options = gdal.BuildVRTOptions(resampleAlg='cubic', addAlpha=True)
 vrt = gdal.BuildVRT(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt', mosaic_files)
 vrt = None   # necessary in order to write to disk
-
+vrt_ovr = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt')
+vrt_ovr = vrt_ovr.BuildOverviews('average', [2, 4, 8, 16, 32])
+vrt_ovr = None
+# --- 1.5.2) & 1.7)
+# use the mosaic .vrt from above and .ReadAsArray in order to save with array2geotiff
+# pyramids are build within the array2geotiff function
 vrt_to_tiff = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt')
 vrt_arr = vrt_to_tiff.ReadAsArray()
-# vrt_arr[vrt_arr == 0 ] = np.nan
 
-array2geotiff(vrt_arr, outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif', ingdal=vrt_to_tiff)
-tiff_overview = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif', 0)
-tiff_overview = tiff_overview.BuildOverviews('average', [2, 4, 8, 16, 32])
-tiff_overview = None
+array2geotiff(vrt_arr, outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif', pyramids=True, ingdal=vrt_to_tiff)
 # gdal.Open(. , 0) opens it read-only -> .ovr's created externally, ',1' stores them internally (read-write)
 
-vrt_to_tiff = gdal.Open(outdir+'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.vrt')
-vrt_to_tiff = vrt_to_tiff.BuildOverviews('average', [2, 4, 8, 16, 32])
-vrt_ov = None
-
-# gdalmerge, createcopy
-# pyramid layer level all (2-32) use gdaladdo
-# copy raster to new raster
 
 # ==================================================================================================== #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Part II ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 # ==================================================================================================== #
+# open zonal shapefile and recently created mosaic.tif
 polyfiles = ListFiles(polydir, '.shp', 1)
 polyshp = ogr.Open(polydir+'FL_Areas_ChacoRegion.shp')
 polylyr = polyshp.GetLayer()
 tree_fraction_mosaic = gdal.Open(outdir +'HANUSCHIK_VINCENT_MAP-WS-1920_RF-prediction.tif')
 
+# get GeoTransform/pixelsize information needed later
 gt = tree_fraction_mosaic.GetGeoTransform()
 pixel_size = gt[1]
+
+# The zonal shapefile uses a "South_America_Albers_Equal_Area_Conic" crs and has to be transformed.
+polygoncrs = polylyr.GetSpatialRef()
 
 crs_tree_fraction = osr.SpatialReference(wkt=tree_fraction_mosaic.GetProjection())
 crs_poly = polylyr.GetSpatialRef()
 transform_poly = osr.CoordinateTransformation(crs_poly,crs_tree_fraction)
 outDriver = ogr.GetDriverByName("Memory")
-
 mosaic_extent = create_poly_extent(tree_fraction_mosaic)
 
-def image_offsets(img, coordinates):
-    gt = img.GetGeoTransform()
-    inv_gt = gdal.InvGeoTransform(gt)
-    offsets_ul = list(map(int, gdal.ApplyGeoTransform(inv_gt, coordinates[0], coordinates[1])))
-    offsets_lr = list(map(int, gdal.ApplyGeoTransform(inv_gt, coordinates[2], coordinates[3])))
-    return offsets_ul + offsets_lr
-
-# plylyr_names = [field.name for field in polylyr.schema]
-
+# create empty dataframe with necessary columns
 summary = pd.DataFrame(columns={'ID': [],
                                 'OT_class': [],
                                 'area_km2': [],
@@ -343,80 +330,96 @@ summary = pd.DataFrame(columns={'ID': [],
                                 '10th_percentile': [],
                                 '90th percentile': []})
 
+# Start loop over all polygons, get ID, area and class information.
+# Since the Polygon is not yet transformed and the unit from the crs is meters,
+# the area reported should be in square meters.
+# Next the polygon will be checked whether it sits entirely within the mosaic extent or not.
+# If true, the polygon feature will be stored in a separate shapefile and then
+# rasterized in order to extract the tree fraction and calculate the statistics.
+# Lastly they will be appended to the dataframe. If the polygon is not within the mosaic extent
+# statistics will be set to np.nan.
 
 polylyr.ResetReading()
-within = []
-out =[]
-for poly in polylyr:
+print("Calculating zonal tree fraction statistics. Looping over polygon features in zonal shapefile.")
+for poly in tqdm(polylyr):
     # ------------ mean elevation of parcel ---------
     # Geometry of each parcel
     ID = poly.GetField('UniqueID')
     OT_class = poly.GetField('OT_class')
     geom = poly.GetGeometryRef().Clone()
-    degarea = geom.GetArea()
+    area = geom.GetArea()/1000000
     geom.Transform(transform_poly)
+
     if geom.Within(mosaic_extent):
-        #something
+        Envelope = geom.GetEnvelope()
+        x_min , x_max , y_min , y_max = geom.GetEnvelope()
+        # create temporary shape file with only the current feature
+        outDataSource = outDriver.CreateDataSource('temp.shp')
+        outLayer = outDataSource.CreateLayer('' , crs_tree_fraction , geom_type=ogr.wkbPolygon)
+        featureDefn = outLayer.GetLayerDefn()
+        # create feature
+        poly_ = ogr.Feature(featureDefn)
+        poly_.SetGeometry(geom)
+        outLayer.CreateFeature(poly_)
+        # Get resolution of vectorized raster
+        x_res = int((x_max - x_min) / pixel_size)
+        # if the parcel is smaller than 1 pixel, 1 pixel will be created
+        if x_res == 0 :
+            x_res = 1
+        y_res = int((y_max - y_min) / pixel_size)
+        if y_res == 0 :
+            y_res = 1
+        # create temporary gdal raster
+        target_ds = gdal.GetDriverByName('MEM').Create('' , x_res , y_res , gdal.GDT_Byte)
+        target_ds.SetGeoTransform((x_min , pixel_size , 0 , y_max , 0 , -pixel_size))
+        band = target_ds.GetRasterBand(1)
+        band.SetNoDataValue(255)
+        # Rasterize parcel
+        gdal.RasterizeLayer(target_ds , [1] , outLayer , burn_values=[1])
+        poly = None
+        outDataSource = None
+        outLayer = None
+        # read mask
+        mask = band.ReadAsArray()
+        # get array indices for subsetting the mosaic
+        img_offsets = image_offsets(tree_fraction_mosaic , (x_min , y_max , x_max , y_min))
+        # subset dem
+        tf_m_sub = tree_fraction_mosaic.ReadAsArray(img_offsets[0] , img_offsets[1] , mask.shape[1] , mask.shape[0])
+
+        # apply mask and calculate statistics
+        mean_tree_fraction = np.mean(np.where(mask == 1 , tf_m_sub , 0))
+        sd_tree_fraction = np.std(np.where(mask == 1 , tf_m_sub , 0))
+        min_tree_fraction = np.min(np.where(mask == 1 , tf_m_sub , 0))
+        max_tree_fraction = np.max(np.where(mask == 1 , tf_m_sub , 0))
+        tenth_tree_fraction = np.percentile(np.where(mask == 1 , tf_m_sub , 0) , 10)
+        ninetieth_tree_fraction = np.percentile(np.where(mask == 1 , tf_m_sub , 0) , 90)
+
+        summary = summary.append({'ID' : ID ,
+                                        'OT_class' : OT_class ,
+                                        'area_km2' : area ,
+                                        'mean' : mean_tree_fraction ,
+                                        'standard_deviation' : sd_tree_fraction ,
+                                        'min' : min_tree_fraction ,
+                                        'max' : max_tree_fraction ,
+                                        '10th_percentile' : tenth_tree_fraction ,
+                                        '90th percentile' : ninetieth_tree_fraction}, ignore_index=True)
+        # ------------------------------------------------
     else:
-        #something
-
-    Envelope = geom.GetEnvelope()
-    x_min , x_max , y_min , y_max = geom.GetEnvelope()
-
-    # create temporary shape file with only the current feature
-    outDataSource = outDriver.CreateDataSource('temp.shp')
-    outLayer = outDataSource.CreateLayer('' , crs_tree_fraction , geom_type=ogr.wkbPolygon)
-    featureDefn = outLayer.GetLayerDefn()
-    # create feature
-    poly = ogr.Feature(featureDefn)
-    poly.SetGeometry(geom)
-    outLayer.CreateFeature(poly)
-
-    # Get resolution of vectorized raster
-    x_res = int((x_max - x_min) / pixel_size)
-    # if the parcel is smaller than 1 pixel, 1 pixel will be created
-    if x_res == 0 :
-        x_res = 1
-    y_res = int((y_max - y_min) / pixel_size)
-    if y_res == 0 :
-        y_res = 1
-    # create temporary gdal raster
-    target_ds = gdal.GetDriverByName('MEM').Create('' , x_res , y_res , gdal.GDT_Byte)
-    target_ds.SetGeoTransform((x_min , pixel_size , 0 , y_max , 0 , -pixel_size))
-    band = target_ds.GetRasterBand(1)
-    band.SetNoDataValue(255)
-    # Rasterize parcel
-    gdal.RasterizeLayer(target_ds , [1] , outLayer , burn_values=[1])
-    poly = None
-    outDataSource = None
-    outLayer = None
-    # read mask
-    mask = band.ReadAsArray()
-    # get array indices for subsetting the dem
-    img_offsets = image_offsets(tree_fraction_mosaic , (x_min , y_max , x_max , y_min))
-    # subset dem
-    tf_m_sub = tree_fraction_mosaic.ReadAsArray(img_offsets[0] , img_offsets[1] , mask.shape[1] , mask.shape[0])
-
-    # apply mask and calc mean
-    dem_mean = np.mean(np.where(mask == 1 , tf_m_sub , 0))
-
-    summary = pd.DataFrame(columns={'ID' : ID ,
-                                    'OT_class' : OT_class ,
-                                    'area_km2' : degarea,
-                                    'mean' : [] ,
-                                    'standard_deviation' : [] ,
-                                    'min' : [] ,
-                                    'max' : [] ,
-                                    '10th_percentile' : [] ,
-                                    '90th percentile' : []})
-    # ------------------------------------------------
-
+        summary = summary.append({'ID' : ID ,
+                                  'OT_class' : OT_class ,
+                                  'area_km2' : area ,
+                                  'mean' : "None" ,
+                                  'standard_deviation' : "None" ,
+                                  'min' : "None" ,
+                                  'max' : "None" ,
+                                  '10th_percentile' : "None" ,
+                                  '90th percentile' : "None"} , ignore_index=True)
 polylyr.ResetReading()
+print("Finished. Writing Dataframe to disk.")
 
-
-
-
-
+# lastly the dataframe is written do disk
+summary.to_csv(outdir+"HANUSCHIK_VINCENT_MAP-WS-1920_summaryStats.csv",index=False, float_format='%.3f', encoding='utf-8-sig')
+print("Script finished. Congratulations.")
 
 # =============================== END TIME-COUNT AND PRINT TIME STATS ============================== #
 time_end = time.localtime()
